@@ -25,9 +25,15 @@ mod fs;
 mod process;
 
 use fs::*;
-use process::*;
+pub use process::*;
+
+use crate::task::incrument_syscall_calling_times;
+// use crate::task::get_current_tcb_copy;
 /// handle syscall exception with `syscall_id` and other arguments
 pub fn syscall(syscall_id: usize, args: [usize; 3]) -> isize {
+    incrument_syscall_calling_times(syscall_id);
+    // let tcb = get_current_tcb_copy();
+    // println!("after incru, syscallIDL{}were called:{:?}",syscall_id,tcb.task_info.syscall_times[syscall_id]);
     match syscall_id {
         SYSCALL_WRITE => sys_write(args[0], args[1] as *const u8, args[2]),
         SYSCALL_EXIT => sys_exit(args[0] as i32),

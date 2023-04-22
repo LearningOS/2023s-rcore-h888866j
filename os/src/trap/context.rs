@@ -18,6 +18,14 @@ impl TrapContext {
         self.x[2] = sp;
     }
     /// init the trap context of an application
+    /// 
+    /// 更改sstatus CSR 状态，设定 之前的特权级模式 为用户态！！
+    /// 
+    /// 创建一个TrapContext，保存所有通用寄存器（都是0） + sstatus寄存器 + sepc寄存器（实参entry）
+    /// 
+    /// 再保存sp（实参传入的sp，app's user stack pointer）到通用寄存器，
+    /// 
+    /// 返回创建的 TrapContext
     pub fn app_init_context(entry: usize, sp: usize) -> Self {
         let mut sstatus = sstatus::read(); // CSR sstatus
         sstatus.set_spp(SPP::User); //previous privilege mode: user mode
