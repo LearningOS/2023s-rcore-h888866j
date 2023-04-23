@@ -16,6 +16,8 @@ mod task;
 
 use crate::loader::{get_app_data, get_num_app};
 use crate::sync::UPSafeCell;
+use crate::syscall::TaskInfo;
+use crate::timer::get_time_us;
 use crate::trap::TrapContext;
 use alloc::vec::Vec;
 use lazy_static::*;
@@ -92,15 +94,15 @@ impl TaskManager {
     /// Change the status of current `Running` task into `Ready`.
     fn mark_current_suspended(&self) {
         let mut inner = self.inner.exclusive_access();
-        let cur = inner.current_task;
-        inner.tasks[cur].task_status = TaskStatus::Ready;
+        let current = inner.current_task;
+        inner.tasks[current].task_status = TaskStatus::Ready;
     }
 
     /// Change the status of current `Running` task into `Exited`.
     fn mark_current_exited(&self) {
         let mut inner = self.inner.exclusive_access();
-        let cur = inner.current_task;
-        inner.tasks[cur].task_status = TaskStatus::Exited;
+        let current = inner.current_task;
+        inner.tasks[current].task_status = TaskStatus::Exited;
     }
 
     /// Find next task to run and return task id.
@@ -140,18 +142,63 @@ impl TaskManager {
             let mut inner = self.inner.exclusive_access();
             let current = inner.current_task;
             inner.tasks[next].task_status = TaskStatus::Running;
+            inner.tasks[next].task_info.status = TaskStatus::Running;// 这里更新与否不重要，因为再taskinfo的接口中更新它
             inner.current_task = next;
             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
             let next_task_cx_ptr = &inner.tasks[next].task_cx as *const TaskContext;
             drop(inner);
             // before this, we should drop local variables that must be dropped manually
             unsafe {
+                // 调用switch函数, 根据调用约定，需要保存一些寄存器比如 t0-t6,a0-a7
+                // 根据调用约定，a0 被设置为 current_task_cx_ptr
+                // 根据调用约定，a1 被设置为 next_task_cx_ptr
                 __switch(current_task_cx_ptr, next_task_cx_ptr);
             }
             // go back to user mode
         } else {
             panic!("All applications completed!");
         }
+    }
+    /// update task info
+    fn update_current_task_info(&self){
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        let current_task = &mut inner.tasks[current];
+        // cannot borrow `inner` as immutable because it is also borrowed as mutable
+        // immutable borrow occurs here. try adding a local storing this...
+        // mod.rs(160, 33): ...and then using that local here
+        current_task.time_elapsed();
+        current_task.task_info.status = current_task.task_status;
+    }
+    /// get current task info
+    fn get_current_task_info(&self) -> TaskInfo{
+        self.update_current_task_info();
+        let inner = self.inner.exclusive_access();
+        let current_task = inner.tasks[inner.current_task]; // 已经clone了一份
+        // current_task.time_elapsed();
+        // current_task.task_info.status = current_task.task_status;
+        // current_task.task_info.syscall_times =
+        // println!("{:?}",current_task.task_info.syscall_times);
+        current_task.task_info.clone()
+    }
+
+    /// get current task control block
+    fn get_current_tcb_copy(&self) -> TaskControlBlock{
+        // self.update_current_task_info();
+        let inner = self.inner.exclusive_access();
+        let current_task = inner.tasks[inner.current_task].clone();
+        // current_task.time_elapsed();
+        // current_task.task_info
+        current_task
+    }
+
+    fn incrument_syscall_calling_times(&self,syscall_id:usize){
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        let current_task_tcb = &mut inner.tasks[current];
+        // current_task_tcb.time_elapsed();
+        // current_task_tcb.task_info
+        current_task_tcb.syscall_record_update(syscall_id);
     }
 }
 
@@ -188,6 +235,28 @@ pub fn exit_current_and_run_next() {
     run_next_task();
 }
 
+/// Get current running taskinfo instance
+pub fn get_current_task_info() -> TaskInfo{
+    TASK_MANAGER.get_current_task_info()
+}
+
+/// Get current running taskControlBlock instance
+pub fn get_current_tcb_copy() -> TaskControlBlock{
+    TASK_MANAGER.get_current_tcb_copy()
+}
+
+/// incrument syscall record
+pub fn incrument_syscall_calling_times(syscall_id:usize){
+    // let inner = TASK_MANAGER.inner.exclusive_access();
+    // let current = inner.current_task;
+    // println!{"before: update syscall time func, syscallID were called for: {} times",inner.tasks[current].task_info.syscall_times[syscall_id]};
+    // drop(inner);
+    TASK_MANAGER.incrument_syscall_calling_times(syscall_id);
+    // let inner = TASK_MANAGER.inner.exclusive_access();
+    // let current = inner.current_task;
+    // println!{"after: update syscall time func, syscallID were called for: {} times",inner.tasks[current].task_info.syscall_times[syscall_id]};
+    // drop(inner);
+}
 /// Get the current 'Running' task's token.
 pub fn current_user_token() -> usize {
     TASK_MANAGER.get_current_token()
