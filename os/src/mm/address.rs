@@ -59,11 +59,21 @@ impl From<usize> for PhysPageNum {
     }
 }
 impl From<usize> for VirtAddr {
+    /// 从 usize 转换成 VA， 保留后 39 位
+    /// 
+    /// VA：39 bits。转换得到 39位的 VA
     fn from(v: usize) -> Self {
+        // 1 左移 x 位再减1，得到二进制的 x个/位 1
+        // 一个数和 二进制x位1 相 "与" 就只保留 后x位
         Self(v & ((1 << VA_WIDTH_SV39) - 1))
     }
 }
 impl From<usize> for VirtPageNum {
+    /// VPN_WIDTH_SV39: usize = VA_WIDTH_SV39 - PAGE_SIZE_BITS;
+    /// 
+    /// 39 - 12 = 27 bits, (9+9+9)
+    /// 
+    /// 转换得到 27 位 VPN
     fn from(v: usize) -> Self {
         Self(v & ((1 << VPN_WIDTH_SV39) - 1))
     }
@@ -79,6 +89,7 @@ impl From<PhysPageNum> for usize {
     }
 }
 impl From<VirtAddr> for usize {
+    /// VA 转成 usize ????
     fn from(v: VirtAddr) -> Self {
         if v.0 >= (1 << (VA_WIDTH_SV39 - 1)) {
             v.0 | (!((1 << VA_WIDTH_SV39) - 1))
@@ -95,6 +106,9 @@ impl From<VirtPageNum> for usize {
 /// virtual address impl
 impl VirtAddr {
     /// Get the (floor) virtual page number
+    /// 
+    /// VA 除以 PAGE_SIZE 4096 就是
+    /// VA 所在虚拟页 的编号
     pub fn floor(&self) -> VirtPageNum {
         VirtPageNum(self.0 / PAGE_SIZE)
     }
@@ -105,7 +119,13 @@ impl VirtAddr {
     }
 
     /// Get the page offset of virtual address
+    /// 
+    /// 也是 页内 bytes 索引
     pub fn page_offset(&self) -> usize {
+        // PAGE_SIZE = 4096
+        // 4096 - 1 = 4095，二进制 就是 12 个1
+        // 再 进行 “与” 操作， 就是保留 后 12 位
+        // get the last 12 bits
         self.0 & (PAGE_SIZE - 1)
     }
 
@@ -115,12 +135,20 @@ impl VirtAddr {
     }
 }
 impl From<VirtAddr> for VirtPageNum {
+    /// 从VA转成 VPN，看 虚拟地址 在虚拟地址空间的第多少个 页 上，
+    /// 返回 页 编号。
+    /// 
+    /// VA 转成 VPN 时，需要 VA 的后12位刚好是 0 ，也就是虚拟页的 起始地址，
+    /// 虚拟页 4096 对齐
     fn from(v: VirtAddr) -> Self {
         assert_eq!(v.page_offset(), 0);
         v.floor()
     }
 }
 impl From<VirtPageNum> for VirtAddr {
+    /// 从 VPN 转成 VA 的时候，就是 VPN * 4096
+    ///
+    /// VPN 左移 12 位就是乘以 4096
     fn from(v: VirtPageNum) -> Self {
         Self(v.0 << PAGE_SIZE_BITS)
     }
