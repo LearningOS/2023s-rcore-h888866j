@@ -236,6 +236,16 @@ impl TaskControlBlock {
             None
         }
     }
+    /// calc time elapsed, trasnlate to ms.
+    pub fn time_elapsed(&mut self) -> usize {
+        self.task_info.time = (get_time_us() - self.start_time)/1000;
+        self.task_info.time
+    }
+    /// record syscall calling times
+    pub fn syscall_record_update(&mut self, syscall_id:usize){
+
+        self.task_info.syscall_times[syscall_id] += 1;
+    }
 }
 
 #[derive(Copy, Clone, PartialEq)]

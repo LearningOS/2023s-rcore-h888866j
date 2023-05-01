@@ -1,4 +1,5 @@
 //! Implementation of [`MapArea`] and [`MemorySet`].
+
 use super::{frame_alloc, FrameTracker};
 use super::{PTEFlags, PageTable, PageTableEntry};
 use super::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
@@ -43,6 +44,35 @@ impl MemorySet {
             page_table: PageTable::new(),
             areas: Vec::new(),
         }
+    }
+    /// free_mapped_area
+    pub fn free_mapped_area(&mut self,start:usize,len:usize) -> isize {
+        if start % 4096 != 0 || len % 4096 != 0{
+            return -1
+        }
+        if let Some((index,_)) = self.areas
+        .iter_mut().enumerate()
+        .find(|(_,area)|
+            {
+                // area.vpn_range.into_iter().find(|vpn| vpn == &VirtPageNum::from(addr)).is_some()
+                area
+                .vpn_range
+                .get_start() == VirtPageNum::from(VirtAddr::from(start).floor())
+
+                &&
+
+                area.vpn_range.get_end() == VirtPageNum::from(VirtAddr::from(start+len).ceil())
+            }
+        ){
+            let mut freed_area = self.areas.remove(index);
+            freed_area.unmap(&mut self.page_table);
+            return 0
+        }else{
+            println!("free mapped area, vpn_range[start,start+len) not found, return -1");
+            return -1
+        };
+        // 0
+        // -1
     }
     /// Get the page table token
     pub fn token(&self) -> usize {
@@ -337,23 +367,43 @@ impl MapArea {
         let ppn: PhysPageNum;
         match self.map_type {
             MapType::Identical => {
+                // 物理页帧被 PageTable 管理
+                // 直接根据vpn 创建ppn，访问这些ppn对应的物理地址时是在 查页表
+                // 是我们的软件在查 还是MMU在查？？？
                 ppn = PhysPageNum(vpn.0);
             }
             MapType::Framed => {
+                // 分配物理页帧，将物理页帧的frame插入 data_frames, 获取物理页帧的 ppn
                 let frame = frame_alloc().unwrap();
                 ppn = frame.ppn;
                 self.data_frames.insert(vpn, frame);
             }
         }
+        // 构造 pte_flags
         let pte_flags = PTEFlags::from_bits(self.map_perm.bits).unwrap();
+        // 这里才是 真正的将 vpn 和 ppn + pte_flags 映射起来
+        // 是 构造一个 valid leafPTE，赋值/拷贝到 PageTable 多级页表最后一级节点 vpn 索引到的那个8bytes的位置
         page_table.map(vpn, ppn, pte_flags);
+        // 这就 维护 了一个vpn的页表，包含了分配管理物理页帧
     }
+
+    #[allow(unused)]
+    /// MapType::Framed 时 回收物理页帧，然后 将vpn在多级页表末节点中的 pte 位置，放入空的非法pte
+    /// 用以标记这个vpn对应的ppn、pa没有被使用
     pub fn unmap_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
         if self.map_type == MapType::Framed {
+            // 回收 vpn对应的 物理页帧
             self.data_frames.remove(&vpn);
         }
+        // 将vpn在多级页表末节点中的 pte 位置，放入空的非法pte
         page_table.unmap(vpn);
     }
+
+    /// 循环对本 MapArea 中的 VPNrange里的 VPNs，做下映射：
+    ///
+    /// 给每个 vpn 分配物理页帧（得到ppn）并管理起来（Identical映射除外）
+    ///
+    /// 根据 ppn 和 flags 创建pte，赋值到 pageTable 末级节点 vpn 对应的 pte位置上去
     pub fn map(&mut self, page_table: &mut PageTable) {
         for vpn in self.vpn_range {
             self.map_one(page_table, vpn);
