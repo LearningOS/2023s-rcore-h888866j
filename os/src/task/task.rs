@@ -79,6 +79,9 @@ pub struct TaskControlBlockInner {
 
     /// Program priority
     pub priority: usize,
+
+    /// Stride
+    pub stride: usize
 }
 
 impl TaskControlBlockInner {
@@ -147,6 +150,7 @@ impl TaskControlBlock {
                     task_info: TaskInfo{status:TaskStatus::UnInit,syscall_times:[0;MAX_SYSCALL_NUM],time:0},
                     start_time:get_time_us(),
                     priority: 16,
+                    stride: 0
                 })
             },
         };
@@ -223,6 +227,7 @@ impl TaskControlBlock {
                     task_info: TaskInfo{status:TaskStatus::UnInit,syscall_times:[0;MAX_SYSCALL_NUM],time:0},
                     start_time: get_time_us(),
                     priority: 16,
+                    stride: 0,
                 })
             },
         });
@@ -273,6 +278,7 @@ impl TaskControlBlock {
                     task_info: TaskInfo{status:TaskStatus::UnInit,syscall_times:[0;MAX_SYSCALL_NUM],time:0},
                     start_time: get_time_us(),
                     priority: 16,
+                    stride: 0,
                 })
             },
         });
