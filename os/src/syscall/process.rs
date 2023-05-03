@@ -4,11 +4,12 @@ use alloc::sync::Arc;
 use crate::{
     config::MAX_SYSCALL_NUM,
     loader::get_app_data_by_name,
-    mm::{translated_refmut, translated_str},
+    mm::{translated_refmut, translated_str,PageTable,VirtAddr,PhysAddr,PhysPageNum},
     task::{
-        add_task, current_task, current_user_token, exit_current_and_run_next,
-        suspend_current_and_run_next, TaskStatus,
+        add_task, current_task, current_user_token, exit_current_and_run_next, get_current_task_info,
+        suspend_current_and_run_next,mmap,munmap,TaskStatus,
     },
+    timer::get_time_us,
 };
 
 #[repr(C)]
@@ -34,7 +35,7 @@ pub struct TaskInfo {
 }
 
 /// task exits and submit an exit code
-pub fn sys_exit(_exit_code: i32) -> ! {
+pub fn sys_exit(exit_code: i32) -> ! {
     trace!("kernel:pid[{}] sys_exit", current_task().unwrap().pid.0);
     exit_current_and_run_next(exit_code);
     panic!("Unreachable in sys_exit!");
@@ -46,12 +47,13 @@ pub fn sys_yield() -> isize {
     suspend_current_and_run_next();
     0
 }
-
+/// sys get pid
 pub fn sys_getpid() -> isize {
     trace!("kernel: sys_getpid pid:{}", current_task().unwrap().pid.0);
     current_task().unwrap().pid.0 as isize
 }
 
+/// sys fork
 pub fn sys_fork() -> isize {
     trace!("kernel:pid[{}] sys_fork", current_task().unwrap().pid.0);
     let current_task = current_task().unwrap();
@@ -67,6 +69,7 @@ pub fn sys_fork() -> isize {
     new_pid as isize
 }
 
+/// sys_exec
 pub fn sys_exec(path: *const u8) -> isize {
     trace!("kernel:pid[{}] sys_exec", current_task().unwrap().pid.0);
     let token = current_user_token();
@@ -238,7 +241,7 @@ pub fn sys_spawn(_path: *const u8) -> isize {
     -1
 }
 
-// YOUR JOB: Set task priority.
+/// YOUR JOB: Set task priority.
 pub fn sys_set_priority(_prio: isize) -> isize {
     trace!(
         "kernel:pid[{}] sys_set_priority NOT IMPLEMENTED",

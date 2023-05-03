@@ -7,11 +7,14 @@
 use super::__switch;
 use super::{fetch_task, TaskStatus};
 use super::{TaskContext, TaskControlBlock};
+use crate::mm::{VirtAddr, VirtPageNum, MapPermission};
 use crate::sync::UPSafeCell;
+use crate::syscall::TaskInfo;
 use crate::trap::TrapContext;
 use alloc::sync::Arc;
 use lazy_static::*;
-use crate::task::TaskManager;
+// use crate::task::TaskManager;
+// use crate::syscall::TaskInfo;
 
 /// Processor management structure
 pub struct Processor {
@@ -44,6 +47,196 @@ impl Processor {
     ///Get current task in cloning semanteme
     pub fn current(&self) -> Option<Arc<TaskControlBlock>> {
         self.current.as_ref().map(Arc::clone)
+    }
+
+    /// update task info
+    fn update_current_task_info(&self){
+        let inner = self.current().unwrap();
+        let mut tcb_inner = inner.inner_exclusive_access();
+
+        tcb_inner.task_info.status = TaskStatus::Running;
+        tcb_inner.time_elapsed();
+
+        // let current = inner.current_task;
+        // let current_task = &mut inner.tasks[current];
+        // // cannot borrow `inner` as immutable because it is also borrowed as mutable
+        // // immutable borrow occurs here. try adding a local storing this...
+        // // mod.rs(160, 33): ...and then using that local here
+        // current_task.time_elapsed();
+        // current_task.task_info.status = current_task.task_status;
+    }
+    fn get_current_task_info(&self) -> TaskInfo{
+        self.update_current_task_info();
+        let inner = self.current().unwrap();
+        let tcb_inner = inner.inner_exclusive_access();
+        // let current_task = &inner.tasks[inner.current_task];
+        // current_task.time_elapsed();
+        // current_task.task_info.status = current_task.task_status;
+        // current_task.task_info.syscall_times =
+        // println!("{:?}",current_task.task_info.syscall_times);
+        tcb_inner.task_info
+    }
+    fn incrument_syscall_calling_times(&self,syscall_id:usize){
+        let inner = self.current().unwrap();
+        let mut tcb_inner = inner.inner_exclusive_access();
+        // let current = inner.current_task;
+        // let current_task_tcb = &mut inner.tasks[current];
+        // current_task_tcb.time_elapsed();
+        // current_task_tcb.task_info
+        tcb_inner.syscall_record_update(syscall_id);
+    }
+    
+    fn munmap(&self,start: usize, len: usize) -> isize{
+        // let token = self.get_current_token();
+        let inner = self.current().unwrap();
+        let mut tcb_inner = inner.inner_exclusive_access();
+        // let current = inner.current_task;
+        // let current_task_tcb = &mut inner.tasks[current];s
+        let vpn_start = VirtAddr::from(start).floor();
+        let vpn_end = VirtAddr::from(start+len).floor();
+        // 直接使用token变量，不能 直接传入 self.get_current_token();
+        // let  pt = PageTable::from_token(token);
+        // check if the [start,start+len) has already been mapped
+        info!("check if the [start,start+len) has already been mapped");
+        for vpn in usize::from(vpn_start)..vpn_end.into(){
+            // 这样unmap 没有回收资源啊， 应该是 memset 或者mapArea去umpap
+            // pt.unmap(VirtPageNum::from(vpn));
+    
+            let x = tcb_inner
+                .memory_set
+                .translate(VirtPageNum::from(vpn));
+            // if let Some(pte) = x {
+            //     if !pte.is_valid() {
+            //         println!("vpn:{:?} were not mapped earlier, return -1",VirtPageNum::from(vpn));
+            //         return -1
+            //     }
+            // }else{
+            //     println!("vpn:{:?} were not mapped earlier, return -1",VirtPageNum::from(vpn));
+            //     return -1
+            // }
+    
+            // if x.is_some() && !x.unwrap().is_valid(){
+            //     println!("vpn:{:?} were not mapped earlier, return -1",VirtPageNum::from(vpn));
+            //     return -1
+            // }else if x.is_none() {
+            //     println!("vpn:{:?} were not mapped earlier, return -1",VirtPageNum::from(vpn));
+            //     return -1
+            // }
+    
+            match x {
+                // Some(pte) => match pte.is_valid() {
+                //     false => {
+                //         println!("vpn:{:?} were not mapped earlier, return -1",VirtPageNum::from(vpn));
+                //         return -1
+                //     },
+                //     true => {}
+                // }
+                Some(pte) => if let false = pte.is_valid() {
+                    println!("vpn:{:?} were not mapped earlier, return -1",VirtPageNum::from(vpn));
+                    return -1
+                }
+                None => {
+                    println!("vpn:{:?} were not mapped earlier, return -1",VirtPageNum::from(vpn));
+                    return -1
+                }
+            }
+        }
+        tcb_inner
+            .memory_set
+            .free_mapped_area(start,len)
+        // 0
+    
+    }
+    
+    fn mmap(&self,start: usize, len: usize, prot: usize) -> isize {
+        // info!("Task Manager mmap0");
+        // 需要先拿出来保存，否则可能造成 两次mutable借用
+        // let token = self.get_current_token();
+        let inner = self.current().unwrap();
+        let mut tcb_inner = inner.inner_exclusive_access();
+        // let current = inner.current_task;
+        // let current_task_tcb = &mut inner.tasks[current];
+        // current_task_tcb.memory_set.insert_framed_area(start_va, end_va, permission)
+        let vpn_start = VirtAddr::from(start).floor();
+        let vpn_end = VirtAddr::from(start+len).ceil();
+        // println!("vpn_start:{:?},vpn_end:{:?},vpn_end+1:{:?}",vpn_start,vpn_end,
+        // VirtPageNum::from(usize::from(vpn_end)+1_usize));
+        // 直接使用token变量，不能 直接传入 self.get_current_token();
+        // 用 current_task_tcb.memory_set.translate(vpn)就不用创建查询页表了
+        // let pt = PageTable::from_token(token);
+        // check if the [start,start+len) has already been mapped
+        // info!("check if the [start,start+len) has already been mapped");
+        // for vpn in usize::from(vpn_start)..vpn_end.into(){
+        for vpn_usize in usize::from(vpn_start)..usize::from(vpn_end){
+            // let x = pt
+            let x = tcb_inner
+                .memory_set
+                .translate(VirtPageNum::from(vpn_usize));
+            // println!("is none:{:?}, is_some:{:?}",x.is_none(),x.is_some());
+            // if x.is_some() && x.unwrap().is_valid() {
+            // x.map(||)
+            // match x {
+            //     Some(pte) => {
+            //         match pte.is_valid() {
+            //             true => {
+            //                 return -1
+            //             }
+            //             _ => {}
+            //         }
+            //     }
+            //     None => {
+    
+            //     }
+            // }
+            if let Some(pte) = x {
+                if pte.is_valid() {
+                    println!("vpn:{:?} were mapped earlier, return -1",VirtPageNum::from(vpn_usize));
+                    return -1
+                }
+            }
+            // if x.is_valid(){
+            //     println!("x.unwrap().is_valid: {}",x.unwrap().is_valid());
+            //     println!("mmap:vpn:{:x} of [va:{:x},va:start+len:{:x})
+            //     has already been mapped earlier, has already been used",vpn_usize,start,start+len);
+            //     return -1;
+            // }
+        }
+        // insert framed mapArea
+        // info!("insert frames mapArea, prot = {:08b}", prot );
+        // let ll = MapPermission::R|MapPermission::W|MapPermission::X|MapPermission::U;
+        // if prot as u8 > ll.bits() {
+        //     println!("Error, prot as u8 > ll.bits()")
+        // }
+        // info!("all mapPerm              = {:08b}", ll );
+        let _perm = MapPermission::from_bits(prot as u8).unwrap();
+        // info!("from_bits converted: _perm {:?}",_perm);
+        // 插入： 分配 map
+        // 如何知晓 剩余容量 是否够分配呢？
+    
+        // println!("pt.translate(vpn_start).is_some():{}\n pt.translate(va+4096*1).is_some():{}\n{}\n{}\n{}",
+        // pt.translate(vpn_start).is_some(),
+        // pt.translate(VirtPageNum::from(VirtAddr::from(start+4096*1))).is_some(),
+        // pt.translate(VirtPageNum::from(VirtAddr::from(start+4096*2))).is_some(),
+        // pt.translate(VirtPageNum::from(VirtAddr::from(start+4096*3))).is_some(),
+        // pt.translate(VirtPageNum::from(VirtAddr::from(start+4096*40))).is_some(),
+    
+        // );
+        tcb_inner
+            .memory_set
+            .insert_framed_area(
+                VirtAddr::from(start),
+                VirtAddr::from(start+len),
+                _perm | MapPermission::U,
+            );
+        // println!("pt.translate(vpn_start).is_some():{}\n pt.translate(va+4096*1).is_some():{}\n{}\n{}\n{}",
+        // pt.translate(vpn_start).is_some(),
+        // pt.translate(VirtPageNum::from(VirtAddr::from(start+4096*1))).is_some(),
+        // pt.translate(VirtPageNum::from(VirtAddr::from(start+4096*2))).is_some(),
+        // pt.translate(VirtPageNum::from(VirtAddr::from(start+4096*3))).is_some(),
+        // pt.translate(VirtPageNum::from(VirtAddr::from(start+4096*4))).is_some(),
+        // );
+    
+        0
     }
 }
 
@@ -111,6 +304,25 @@ pub fn schedule(switched_task_cx_ptr: *mut TaskContext) {
     }
 }
 
+/// get current task info
+pub fn get_current_task_info() -> TaskInfo{
+    PROCESSOR.exclusive_access().get_current_task_info()
+}
+
+/// mmap
+pub fn mmap(start: usize, len: usize, prot:usize) -> isize{
+    PROCESSOR.exclusive_access().mmap(start, len, prot)
+}
+
+/// munmap
+pub fn munmap(start: usize, len: usize,) -> isize{
+    PROCESSOR.exclusive_access().munmap(start, len)
+}
+
+/// incrument syscall record
+pub fn incrument_syscall_calling_times(syscall_id:usize){
+    PROCESSOR.exclusive_access().incrument_syscall_calling_times(syscall_id);
+}
 // impl TaskManager
 // /// update task info
 // fn update_current_task_info(&self){

@@ -44,7 +44,7 @@ mod fs;
 mod process;
 
 use fs::*;
-use process::*;
+pub use process::*;
 use crate::task::incrument_syscall_calling_times;
 // use crate::task::get_current_tcb_copy;
 /// handle syscall exception with `syscall_id` and other arguments

@@ -1,9 +1,11 @@
 //! Types related to task management & Functions for completely changing TCB
 use super::TaskContext;
 use super::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
-use crate::config::TRAP_CONTEXT_BASE;
+use crate::config::{TRAP_CONTEXT_BASE, MAX_SYSCALL_NUM};
 use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
 use crate::sync::UPSafeCell;
+use crate::syscall::TaskInfo;
+use crate::timer::get_time_us;
 use crate::trap::{trap_handler, TrapContext};
 use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
@@ -50,6 +52,12 @@ pub struct TaskControlBlockInner {
     /// Maintain the execution status of the current process
     pub task_status: TaskStatus,
 
+    /// task info
+    pub task_info: TaskInfo,
+
+    /// start time    
+    pub start_time: usize,
+    
     /// Application address space
     pub memory_set: MemorySet,
 
@@ -85,6 +93,16 @@ impl TaskControlBlockInner {
     pub fn is_zombie(&self) -> bool {
         self.get_status() == TaskStatus::Zombie
     }
+    /// calc time elapsed, trasnlate to ms.
+    pub fn time_elapsed(&mut self) -> usize {
+        self.task_info.time = (get_time_us() - self.start_time)/1000;
+        self.task_info.time
+    }
+    /// record syscall calling times
+    pub fn syscall_record_update(&mut self, syscall_id:usize){
+
+        self.task_info.syscall_times[syscall_id] += 1;
+    }
 }
 
 impl TaskControlBlock {
@@ -118,6 +136,8 @@ impl TaskControlBlock {
                     exit_code: 0,
                     heap_bottom: user_sp,
                     program_brk: user_sp,
+                    task_info: TaskInfo{status:TaskStatus::UnInit,syscall_times:[0;MAX_SYSCALL_NUM],time:0},
+                    start_time:get_time_us(),
                 })
             },
         };
@@ -191,6 +211,8 @@ impl TaskControlBlock {
                     exit_code: 0,
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
+                    task_info: TaskInfo{status:TaskStatus::UnInit,syscall_times:[0;MAX_SYSCALL_NUM],time:0},
+                    start_time:get_time_us(),
                 })
             },
         });
@@ -236,16 +258,16 @@ impl TaskControlBlock {
             None
         }
     }
-    /// calc time elapsed, trasnlate to ms.
-    pub fn time_elapsed(&mut self) -> usize {
-        self.task_info.time = (get_time_us() - self.start_time)/1000;
-        self.task_info.time
-    }
-    /// record syscall calling times
-    pub fn syscall_record_update(&mut self, syscall_id:usize){
+    // /// calc time elapsed, trasnlate to ms.
+    // pub fn time_elapsed(&mut self) -> usize {
+    //     self.task_info.time = (get_time_us() - self.start_time)/1000;
+    //     self.task_info.time
+    // }
+    // /// record syscall calling times
+    // pub fn syscall_record_update(&mut self, syscall_id:usize){
 
-        self.task_info.syscall_times[syscall_id] += 1;
-    }
+    //     self.task_info.syscall_times[syscall_id] += 1;
+    // }
 }
 
 #[derive(Copy, Clone, PartialEq)]
