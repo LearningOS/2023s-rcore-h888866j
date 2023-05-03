@@ -238,6 +238,13 @@ impl Processor {
     
         0
     }
+
+    /// set priority of a program/pcb
+    fn set_priority0(&mut self, new_priority: usize){
+        let inner = self.current().unwrap();
+        let mut tcb_inner = inner.inner_exclusive_access();
+        tcb_inner.priority = new_priority
+    }
 }
 
 lazy_static! {
@@ -322,6 +329,13 @@ pub fn munmap(start: usize, len: usize,) -> isize{
 /// incrument syscall record
 pub fn incrument_syscall_calling_times(syscall_id:usize){
     PROCESSOR.exclusive_access().incrument_syscall_calling_times(syscall_id);
+}
+
+/// set priority of a program/pcb
+pub fn set_priority1(new_priority: usize){
+    PROCESSOR
+    .exclusive_access()
+    .set_priority0(new_priority)
 }
 // impl TaskManager
 // /// update task info
