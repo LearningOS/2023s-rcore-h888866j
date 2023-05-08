@@ -42,7 +42,7 @@ impl TaskManager {
         // println!("TaskManager.fetch() x.isSome: {:?}",x.is_some());
         if let Some((index,_)) = x {
             // println!("found a smallest stride in ready queue, index :{}",index);
-            println!("len of readyqueue: {}",self.ready_queue.len());
+            // println!("len of readyqueue: {}",self.ready_queue.len());
             let  task = self.ready_queue.remove(index);            
             // add pass to stride immediately after fetch
             // task = task.map(| x|{
