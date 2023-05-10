@@ -1,22 +1,16 @@
 //! Types related to task management & Functions for completely changing TCB
-use super::TaskContext;
+use super::{TaskContext, add_task};
 use super::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
-use crate::config::TRAP_CONTEXT_BASE;
+// use crate::config::TRAP_CONTEXT_BASE;
+use crate::config::{TRAP_CONTEXT_BASE, MAX_SYSCALL_NUM};
 use crate::fs::{File, Stdin, Stdout};
 use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
 use crate::sync::UPSafeCell;
 use crate::trap::{trap_handler, TrapContext};
 use alloc::sync::{Arc, Weak};
 use alloc::vec;
-// use super::{TaskContext, add_task};
-// use super::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
-// use crate::config::{TRAP_CONTEXT_BASE, MAX_SYSCALL_NUM};
-// use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
-// use crate::sync::UPSafeCell;
-// use crate::syscall::TaskInfo;
-// use crate::timer::get_time_us;
-// use crate::trap::{trap_handler, TrapContext};
-// use alloc::sync::{Arc, Weak};
+use crate::syscall::TaskInfo;
+use crate::timer::get_time_us;
 use alloc::vec::Vec;
 use core::cell::RefMut;
 
@@ -116,6 +110,7 @@ impl TaskControlBlockInner {
             self.fd_table.push(None);
             self.fd_table.len() - 1
         }
+    }
     /// calc time elapsed, trasnlate to ms.
     pub fn time_elapsed(&mut self) -> usize {
         self.task_info.time = (get_time_us() - self.start_time)/1000;
@@ -293,6 +288,17 @@ impl TaskControlBlock {
         let pid_handle = pid_alloc();
         let kernel_stack = kstack_alloc();
         let kernel_stack_top = kernel_stack.get_top();
+        
+        // // copy fd table
+        // let mut new_fd_table: Vec<Option<Arc<dyn File + Send + Sync>>> = Vec::new();
+        // for fd in parent_inner.fd_table.iter() {
+        //     if let Some(file) = fd {
+        //         new_fd_table.push(Some(file.clone()));
+        //     } else {
+        //         new_fd_table.push(None);
+        //     }
+        // }
+
         let task_control_block = Arc::new(TaskControlBlock {
             pid: pid_handle,
             kernel_stack,
@@ -306,6 +312,14 @@ impl TaskControlBlock {
                     parent: Some(Arc::downgrade(self)),
                     children: Vec::new(),
                     exit_code: 0,
+                    fd_table: vec![
+                        // 0 -> stdin
+                        Some(Arc::new(Stdin)),
+                        // 1 -> stdout
+                        Some(Arc::new(Stdout)),
+                        // 2 -> stderr
+                        Some(Arc::new(Stdout)),
+                    ],
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
                     task_info: TaskInfo{status:TaskStatus::UnInit,syscall_times:[0;MAX_SYSCALL_NUM],time:0},

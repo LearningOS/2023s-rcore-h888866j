@@ -41,7 +41,11 @@ impl Bitmap {
                     .map(|(bits64_pos, bits64)| (bits64_pos, bits64.trailing_ones() as usize))
                 {
                     // modify cache
+                    // 其主要思路是遍历区域中的每个块，再在每个块中以bit组（每组 64 bits）为单位进行遍历，
+                    // 找到一个尚未被全部分配出去的组，最后在里面分配一个bit。它将会返回分配的bit所在的位置，
+                    // 等同于索引节点编号/数据块的编号。如果所有bit均已经被分配出去了，则返回 None 。
                     bitmap_block[bits64_pos] |= 1u64 << inner_pos;
+                    // 返回 bit 所在位置 / 返回分配的bit编号
                     Some(block_id * BLOCK_BITS + bits64_pos * 64 + inner_pos as usize)
                 } else {
                     None
