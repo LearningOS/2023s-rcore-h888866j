@@ -22,18 +22,20 @@ mod switch;
 #[allow(rustdoc::private_intra_doc_links)]
 mod task;
 
+use crate::{loader::get_app_data_by_name, config::BIG_STRIDE, };
 use crate::fs::{open_file, OpenFlags};
 use alloc::sync::Arc;
-pub use context::TaskContext;
 use lazy_static::*;
 pub use manager::{fetch_task, TaskManager};
 use switch::__switch;
 pub use task::{TaskControlBlock, TaskStatus};
 
+pub use context::TaskContext;
 pub use id::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
 pub use manager::add_task;
 pub use processor::{
     current_task, current_trap_cx, current_user_token, run_tasks, schedule, take_current_task,
+    get_current_task_info, mmap, munmap, incrument_syscall_calling_times, set_priority1,
     Processor,
 };
 /// Suspend the current 'Running' task and run the next task in task list.
@@ -46,6 +48,12 @@ pub fn suspend_current_and_run_next() {
     let task_cx_ptr = &mut task_inner.task_cx as *mut TaskContext;
     // Change status to Ready
     task_inner.task_status = TaskStatus::Ready;
+    // println!("suspend_current_and_run_next: setup stride to incruement stride");
+    // add pass to tcb.stride just before switching to other task/process
+    // println!("before add: current stride = {}",task_inner.stride);
+    let prio = task_inner.priority;
+    task_inner.stride += BIG_STRIDE / prio;
+    // println!("after` add: current stride = {}",task_inner.stride);
     drop(task_inner);
     // ---- release current PCB
 
@@ -95,6 +103,8 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     inner.memory_set.recycle_data_pages();
     // drop file descriptors
     inner.fd_table.clear();
+    // println!("exit_current_and_run_next: setup stride to usize:MAX");
+    // inner.stride = usize::MAX;
     drop(inner);
     // **** release current PCB
     // drop task manually to maintain rc correctly
