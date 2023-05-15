@@ -11,7 +11,7 @@ use crate::sync::UPSafeCell;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use bitflags::*;
-use easy_fs::{EasyFileSystem, Inode};
+pub use easy_fs::{EasyFileSystem, Inode, Stat, StatMode};
 use lazy_static::*;
 
 /// inode in memory
@@ -39,6 +39,7 @@ impl OSInode {
     }
     /// read all data from the inode
     pub fn read_all(&self) -> Vec<u8> {
+        // println!("read all of OSinode method start");
         let mut inner = self.inner.exclusive_access();
         let mut buffer = [0u8; 512];
         let mut v: Vec<u8> = Vec::new();
@@ -50,7 +51,25 @@ impl OSInode {
             inner.offset += len;
             v.extend_from_slice(&buffer[..len]);
         }
+        
+        // println!("read all of OSinode method ends");
         v
+    }
+    /// get a copy of stat from the OSinode
+    pub fn get_fstat(&self) -> Stat {
+        // println!("OsInode::get_fstat");
+        
+        let inner = self.inner.exclusive_access();       
+        // println!("OsInode::get_fstat got innner exclusive access ");
+        let re = inner
+        .inode
+        .read_disk_inode(|disk_inode|{
+            disk_inode.stat.clone()
+        });
+
+        // println!("osinode get fstat end");
+        re
+        
     }
 }
 
@@ -123,6 +142,17 @@ pub fn open_file(name: &str, flags: OpenFlags) -> Option<Arc<OSInode>> {
         })
     }
 }
+/// unlink name
+pub fn unlinkat(old_name:&str) -> isize{
+    ROOT_INODE.unlinkat(old_name)
+    // -1
+}
+/// link at using  ROOT_INODE.linkat(old_name, new_name);
+pub fn linkat(old_name:&str, new_name:&str) -> isize{
+    // println!("linkat pub func");
+    ROOT_INODE.linkat(old_name, new_name)
+}
+
 
 impl File for OSInode {
     fn readable(&self) -> bool {
@@ -131,7 +161,8 @@ impl File for OSInode {
     fn writable(&self) -> bool {
         self.writable
     }
-    fn read(&self, mut buf: UserBuffer) -> usize {
+    fn read(&self, mut buf: UserBuffer) -> usize {        
+        // println!("read of Trait impl start");
         let mut inner = self.inner.exclusive_access();
         let mut total_read_size = 0usize;
         for slice in buf.buffers.iter_mut() {
@@ -142,9 +173,11 @@ impl File for OSInode {
             inner.offset += read_size;
             total_read_size += read_size;
         }
+        // println!("read of Trait impl ends");
         total_read_size
     }
     fn write(&self, buf: UserBuffer) -> usize {
+        // println!("write of Trait impl start");
         let mut inner = self.inner.exclusive_access();
         let mut total_write_size = 0usize;
         for slice in buf.buffers.iter() {
@@ -153,6 +186,7 @@ impl File for OSInode {
             inner.offset += write_size;
             total_write_size += write_size;
         }
+        // println!("write of Trait impl ends");
         total_write_size
     }
 }

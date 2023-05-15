@@ -76,7 +76,7 @@ impl EasyFileSystem {
         get_block_cache(root_inode_block_id as usize, Arc::clone(&block_device))
             .lock()
             .modify(root_inode_offset, |disk_inode: &mut DiskInode| {
-                disk_inode.initialize(DiskInodeType::Directory);
+                disk_inode.initialize(0,DiskInodeType::Directory);
             });
         block_cache_sync_all();
         Arc::new(Mutex::new(efs))
@@ -103,37 +103,69 @@ impl EasyFileSystem {
                 Arc::new(Mutex::new(efs))
             })
     }
+
     /// Get the root inode of the filesystem
     pub fn root_inode(efs: &Arc<Mutex<Self>>) -> Inode {
         let block_device = Arc::clone(&efs.lock().block_device);
         // acquire efs lock temporarily
         let (block_id, block_offset) = efs.lock().get_disk_inode_pos(0);
         // release efs lock
+
+        // create an Inode and return it
         Inode::new(block_id, block_offset, Arc::clone(efs), block_device)
     }
-    /// Get inode by id
+
+    // /// get_inode_by_inode_num
+    // pub fn get_inode_by_inode_num(efs: &Arc<Mutex<Self>>, inode_num:u32) -> Inode {        
+    //     let block_device = Arc::clone(&efs.lock().block_device);
+    //     // acquire efs lock temporarily
+    //     let (block_id, block_offset) = efs.lock().get_disk_inode_pos(0);
+    //     // release efs lock
+
+    //     // create an Inode and return it
+    //     Inode::new(block_id, block_offset, Arc::clone(efs), block_device,inode_num)
+    // }
+
+    /// Get disk inode position by inode num / id.
+    /// 
+    /// Return (disk inode's underlying device_block_id, offset = inner_id in that inode area block  * DiskInode size(每个block里有多个DiskInode))
+    /// 
+    /// EasyFileSystem 知道整个磁盘布局，即可以从 inode位图 或数据块位图上分配的 bit 编号，
+    /// 来算出各个存储inode和数据块的磁盘块在磁盘上的实际位置。
     pub fn get_disk_inode_pos(&self, inode_id: u32) -> (u32, usize) {
         let inode_size = core::mem::size_of::<DiskInode>();
         let inodes_per_block = (BLOCK_SZ / inode_size) as u32;
-        let block_id = self.inode_area_start_block + inode_id / inodes_per_block;
+        // 计算 block_id , self.inode_area_start_block + （inode_id 除以 inodes_per_block 得到的inode_area_id）
+        let device_block_id = self.inode_area_start_block + inode_id / inodes_per_block;
         (
-            block_id,
+            device_block_id,
             (inode_id % inodes_per_block) as usize * inode_size,
         )
     }
-    /// Get data block by id
+    /// Get data's device_block_id by data_block_id
     pub fn get_data_block_id(&self, data_block_id: u32) -> u32 {
         self.data_area_start_block + data_block_id
     }
-    /// Allocate a new inode
+    /// Allocate a new inode, 
+    /// 
+    /// return inode id 即 DiskInode 所在数据块 在 inode_area_block 中的编号id。
+    /// 
+    /// 返回 inode number
+    /// 
+    /// 这个返回值 除以 inodes_per_block 再加上 inode_area_start_block 就是 DiskInode的 device_block_id
     pub fn alloc_inode(&mut self) -> u32 {
         self.inode_bitmap.alloc(&self.block_device).unwrap() as u32
     }
 
     /// Allocate a data block
+    /// 
+    /// Return a device block ID not ID in the data area.
+    ///  
+    /// 返回的是 加上了 self.data_area_start_block 后的 device_block_id
     pub fn alloc_data(&mut self) -> u32 {
         self.data_bitmap.alloc(&self.block_device).unwrap() as u32 + self.data_area_start_block
     }
+
     /// Deallocate a data block
     pub fn dealloc_data(&mut self, block_id: u32) {
         get_block_cache(block_id as usize, Arc::clone(&self.block_device))
