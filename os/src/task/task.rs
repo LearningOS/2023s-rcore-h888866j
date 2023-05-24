@@ -2,6 +2,7 @@
 
 use super::id::TaskUserRes;
 use super::{kstack_alloc, KernelStack, ProcessControlBlock, TaskContext};
+use crate::timer::get_time_us;
 use crate::trap::TrapContext;
 use crate::{mm::PhysPageNum, sync::UPSafeCell};
 use alloc::sync::{Arc, Weak};
@@ -31,6 +32,7 @@ impl TaskControlBlock {
 }
 
 pub struct TaskControlBlockInner {
+    /// thread resource
     pub res: Option<TaskUserRes>,
     /// The physical page number of the frame where the trap context is placed
     pub trap_cx_ppn: PhysPageNum,
@@ -41,6 +43,9 @@ pub struct TaskControlBlockInner {
     pub task_status: TaskStatus,
     /// It is set when active exit or execution error occurs
     pub exit_code: Option<i32>,
+
+    /// start time
+    pub start_time: usize,
 }
 
 impl TaskControlBlockInner {
@@ -51,6 +56,10 @@ impl TaskControlBlockInner {
     #[allow(unused)]
     fn get_status(&self) -> TaskStatus {
         self.task_status
+    }
+    // get time(us) elapsed using current_time - start_time
+    pub fn get_time_elapsed(&self) -> usize {
+        get_time_us() - self.start_time
     }
 }
 
@@ -75,6 +84,7 @@ impl TaskControlBlock {
                     task_cx: TaskContext::goto_trap_return(kstack_top),
                     task_status: TaskStatus::Ready,
                     exit_code: None,
+                    start_time: get_time_us(),
                 })
             },
         }

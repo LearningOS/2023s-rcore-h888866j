@@ -36,6 +36,7 @@ pub use processor::{
     current_kstack_top, current_process, current_task, current_trap_cx, current_trap_cx_user_va,
     current_user_token, run_tasks, schedule, take_current_task,
 };
+pub use process::{RESOURCE_CATEG_NUM, MAX_THREAD_NUM};
 pub use signal::SignalFlags;
 pub use task::{TaskControlBlock, TaskStatus};
 
@@ -98,6 +99,10 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     // the process should terminate at once
     if tid == 0 {
         let pid = process.getpid();
+        // for i in 0..RESOURCE_CATEG_NUM{
+        //     AVAIL.exclusive_access()[i] = 0;
+        // }
+
         if pid == IDLE_PID {
             println!(
                 "[kernel] Idle process exit with exit_code {} ...",
@@ -117,7 +122,11 @@ pub fn exit_current_and_run_next(exit_code: i32) {
         process_inner.is_zombie = true;
         // record exit code of main process
         process_inner.exit_code = exit_code;
-
+        // process_inner.available.exclusive_access().iter_mut().map(|v|{*v = 0;v}).all(|&mut x|x == 0);
+        // let avil = process_inner.available.clone();
+        // for i in 0..RESOURCE_CATEG_NUM{
+        //     avil.exclusive_access()[i] = 0;
+        // }
         {
             // move all child processes under init process
             let mut initproc_inner = INITPROC.inner_exclusive_access();

@@ -167,7 +167,17 @@ pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
         "kernel:pid[{}] sys_get_time NOT IMPLEMENTED",
         current_task().unwrap().process.upgrade().unwrap().getpid()
     );
-    -1
+    let task = current_task().unwrap();
+    let t = task.inner_exclusive_access().get_time_elapsed();
+    // drop(task);
+    let ts = TimeVal{
+        sec: t / 1000_000,
+        usec: t % 1000_000,
+    };
+    let token = current_process().inner_exclusive_access().get_user_token();
+    let u_ts = translated_refmut(token, _ts);
+    *u_ts = ts;
+    0
 }
 
 /// task_info syscall

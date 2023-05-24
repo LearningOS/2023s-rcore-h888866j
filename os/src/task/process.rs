@@ -14,7 +14,7 @@ use alloc::sync::{Arc, Weak};
 use alloc::vec;
 use alloc::vec::Vec;
 use core::cell::RefMut;
-
+// use lazy_static::lazy_static;
 /// Process Control Block
 pub struct ProcessControlBlock {
     /// immutable
@@ -49,6 +49,14 @@ pub struct ProcessControlBlockInner {
     pub semaphore_list: Vec<Option<Arc<Semaphore>>>,
     /// condvar list
     pub condvar_list: Vec<Option<Arc<Condvar>>>,
+    /// enable_deadlock_detect
+    pub enable_deadlock_detect: bool,
+    /// Available Resource
+    pub available: Arc<UPSafeCell<Resource>>,
+    /// Allocated resource
+    pub allocation: Arc<UPSafeCell<Allocation>>,
+    /// needed resource
+    pub needed: Arc<UPSafeCell<Needed>>,
 }
 
 impl ProcessControlBlockInner {
@@ -81,6 +89,10 @@ impl ProcessControlBlockInner {
     /// get a task with tid in this process
     pub fn get_task(&self, tid: usize) -> Arc<TaskControlBlock> {
         self.tasks[tid].as_ref().unwrap().clone()
+    }
+    pub fn sys_enable_deadlock_detect(&mut self, enable:bool) -> isize {
+        self.enable_deadlock_detect = enable;
+        0
     }
 }
 
@@ -119,6 +131,10 @@ impl ProcessControlBlock {
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
+                    enable_deadlock_detect: false,
+                    allocation: Arc::new(UPSafeCell::new([[0;RESOURCE_CATEG_NUM]; MAX_THREAD_NUM])),
+                    available: Arc::new(UPSafeCell::new([0; RESOURCE_CATEG_NUM])),
+                    needed: Arc::new(UPSafeCell::new([[0;RESOURCE_CATEG_NUM]; MAX_THREAD_NUM])),
                 })
             },
         });
@@ -245,6 +261,10 @@ impl ProcessControlBlock {
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
+                    enable_deadlock_detect: parent.enable_deadlock_detect,
+                    allocation: Arc::new(UPSafeCell::new([[0;RESOURCE_CATEG_NUM]; MAX_THREAD_NUM])),
+                    available: Arc::new(UPSafeCell::new([0; RESOURCE_CATEG_NUM])),
+                    needed: Arc::new(UPSafeCell::new([[0;RESOURCE_CATEG_NUM]; MAX_THREAD_NUM])),
                 })
             },
         });
@@ -283,3 +303,39 @@ impl ProcessControlBlock {
         self.pid.0
     }
 }
+
+
+// 可利用资源向量 Available ：含有 m 个元素的一维数组，每个元素代表可利用的某一类资源的数目， 
+// 其初值是该类资源的全部可用数目，其值随该类资源的分配和回收而动态地改变。 
+// Available[j] = k，表示第 j 类资源的可用数量为 k。
+/// 支持的最大锁数量
+pub const RESOURCE_CATEG_NUM:usize = 128; // 可用资源类型种类数量，锁的最大数量
+// 下标是资源类型编号，记录的值是 该类资源的可用总数
+type Resource = [u8; RESOURCE_CATEG_NUM];
+
+// 分配矩阵 Allocation：n * m 矩阵，表示每类资源已分配给每个线程的资源数。 
+// Allocation[i,j] = g，则表示线程 i 当前己分得第 j 类资源的数量为 g。
+/// 支持的最大线程数量 
+pub const MAX_THREAD_NUM:usize = 128; // 线程总数
+type Allocation = [Resource;MAX_THREAD_NUM];
+
+// 需求矩阵 Need：n * m 的矩阵，表示每个线程还需要的各类资源数量。
+//  Need[i,j] = d，则表示线程 i 还需要第 j 类资源的数量为 d 。
+type Needed = [Resource;MAX_THREAD_NUM];
+
+
+// 设置两个向量: 工作向量 Work，表示操作系统可提供给线程继续运行所需的各类资源数目，
+// 它含有 m 个元素。初始时，Work = Available ；
+// type Work =  [u64; RESOURCE_CATEG_NUM];
+// 结束向量 Finish，表示系统是否有足够的资源分配给线程，使之运行完成。
+// 初始时 Finish[0..n-1] = false，表示所有线程都没结束；当有足够资源分配给线程时， 
+// 设置 Finish[i] = true。
+// type Finish = [bool;MAX_THREAD_NUM];
+
+// lazy_static! {
+//     // pub static ref WORK: UPSafeCell<Resource> = unsafe { UPSafeCell::new([0_u8;512]) };
+//     pub static ref AVAIL: UPSafeCell<Resource> = unsafe { UPSafeCell::new([0_u8;512]) };
+//     pub static ref ALLOCATION: UPSafeCell<Allocation> = unsafe { UPSafeCell::new([[0_u8;512];1024]) };
+//     pub static ref NEEDED: UPSafeCell<Allocation> = unsafe { UPSafeCell::new([[0_u8;512];1024]) };
+//     // pub static ref FINISH: UPSafeCell<Finish> = unsafe { UPSafeCell::new([false;1024]) };
+// }
